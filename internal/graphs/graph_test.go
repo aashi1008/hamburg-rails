@@ -7,6 +7,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestConcurrentReadersAndReload(t *testing.T) {
+	g := seedGraph()
+	done := make(chan struct{})
+	// readers
+	for i := 0; i < 50; i++ {
+		go func() {
+			for j := 0; j < 50; j++ {
+				_, _ = g.ShortestPath("A", "C")
+				_ = g.CountTripsByDistance("C", "C", 30)
+			}
+			done <- struct{}{}
+		}()
+	}
+	// reloaders
+	for i := 0; i < 5; i++ {
+		go func() {
+			_ = g.LoadEdges([]string{"AB5", "BC4", "CD8"})
+		}()
+	}
+	// wait for readers
+	for i := 0; i < 50; i++ {
+		<-done
+	}
+}
+
+
 func seedGraph() *Graph {
 	g := NewGraph()
 	edges := strings.Split("AB5, BC4, CD8, DC8, DE6, AD5, CE2, EB3, AE7", ",")
@@ -67,13 +93,13 @@ func TestTripsByDistance(t *testing.T) {
 func TestShortestPath(t *testing.T) {
 	g := seedGraph()
 
-	dist, path := g.FindShortestPath("A", "C")
+	dist, path := g.ShortestPath("A", "C")
 	assert.Equal(t, 9, dist)
 	assert.Equal(t, []string{"A", "B", "C"}, path)
 
-	dist, path = g.FindShortestPath("B", "B")
+	dist, path = g.ShortestPath("B", "B")
 	assert.Equal(t, 9, dist)
-	// could be B-C-D-C-B or B-C-E-B; our implementation returns one lex min
+	// could be B-C-D-C-B or B-C-E-B; it returns one lex min
 	assert.NotEmpty(t, path)
 }
 
@@ -91,6 +117,20 @@ func TestGraphLoadErrors(t *testing.T) {
 	// empty
 	err = g.LoadEdges([]string{})
 	assert.NoError(t, err)
+
+	err = g.LoadEdges([]string{"ABCDEF50"})
+	assert.NoError(t, err)
+}
+
+func TestGraphLoadFromFile(t *testing.T) {
+	g := NewGraph()
+
+	err := g.LoadGraphFromFile("../../graph.txt")
+	assert.NoError(t, err)
+
+	err = g.LoadGraphFromFile("../../graph123.txt")
+	assert.Error(t, err)
+
 }
 
 func FuzzCountTripsByStops_MinGreaterThanMax(f *testing.F) {
@@ -99,7 +139,6 @@ func FuzzCountTripsByStops_MinGreaterThanMax(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, from, to string, minStops, maxStops int) {
 		g := NewGraph()
-		// Add a simple edge to make the graph non-empty
 		_ = g.LoadEdges([]string{"AB1", "BC1", "CA1"})
 
 		if minStops > maxStops {

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+
+	"syscall"
 	"time"
 
 	graph "github.com/aashi1008/hamburg-rails/internal/graphs"
@@ -22,7 +24,10 @@ func main() {
 	g := graph.NewGraph()
 	if *graphPath != "" {
 		fmt.Println("Graph file path:", *graphPath)
-		g.LoadGraphFromFile(*graphPath)
+		err := g.LoadGraphFromFile(*graphPath)
+		if err != nil {
+			log.Fatalf("failed to load graph from file: %v", err)
+		}
 	}
 
 	h := handlers.NewHandler(g)
@@ -40,10 +45,10 @@ func main() {
 	}()
 
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 	log.Println("Shutting down server...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
 		log.Fatalf("Server Shutdown: %v", err)

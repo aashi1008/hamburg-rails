@@ -1,49 +1,129 @@
-openapi: 3.0.3
-info:
-  title: Hamburg Rails API
-  version: 1.0.0
-paths:
-  /graph:
-    get:
-      summary: Get current edge list and node count
-      responses:
-        '200':
-          description: Graph data
-  /shortest:
-    get:
-      summary: Compute shortest path between two nodes
-      parameters:
-        - in: query
-          name: from
-          required: true
-          schema: { type: string }
-        - in: query
-          name: to
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Shortest path result
-  /trips:
-    get:
-      summary: Count trips by number of stops
-      parameters:
-        - in: query
-          name: from
-          required: true
-          schema: { type: string }
-        - in: query
-          name: to
-          required: true
-          schema: { type: string }
-        - in: query
-          name: minStops
-          required: true
-          schema: { type: integer }
-        - in: query
-          name: maxStops
-          required: true
-          schema: { type: integer }
-      responses:
-        '200':
-          description: Trip count result
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Hamburg Rails API",
+    "version": "1.0.0",
+    "description": "REST API for querying routes on a directed weighted graph of Hamburg towns with validations and error handling."
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Health check",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "example": { "status": "ok" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/graph": {
+      "post": {
+        "summary": "Load or replace the current graph",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "text/plain": {
+              "example": "AB5, BC4, CD8"
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Graph loaded successfully", "content": { "application/json": { "example": { "status": "ok", "message": "graph loaded" } } } },
+          "400": { "description": "Invalid graph format", "content": { "application/json": { "example": { "error": "graph parse error: duplicate edge" } } } }
+        }
+      }
+    },
+    "/graph": {
+      "get": {
+        "summary": "Get current graph edges and node count",
+        "responses": {
+          "200": {
+            "description": "Current edges and node count",
+            "content": {
+              "application/json": {
+                "example": {
+                  "edges": {
+                    "A": [{ "to": "B", "distance": 5 }],
+                    "B": [{ "to": "C", "distance": 4 }]
+                  },
+                  "node_count": 2
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/routes/distance": {
+      "post": {
+        "summary": "Calculate distance for a fixed path",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": { "path": ["A", "B", "C"] }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Distance returned", "content": { "application/json": { "example": { "distance": 9 } } } },
+          "404": { "description": "No such route", "content": { "application/json": { "example": { "error": "NO SUCH ROUTE" } } } },
+          "422": { "description": "Validation errors", "content": { "application/json": { "example": { "error": "path must contain at least two towns" } } } }
+        }
+      }
+    },
+    "/routes/count-by-stops": {
+      "post": {
+        "summary": "Count trips between towns with stop constraints",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": { "from": "A", "to": "C", "minStops": 1, "maxStops": 3 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Count returned", "content": { "application/json": { "example": { "count": 2 } } } },
+          "422": { "description": "Validation errors", "content": { "application/json": { "example": { "error": "minStops cannot be greater than maxStops" } } } }
+        }
+      }
+    },
+    "/routes/count-by-distance": {
+      "post": {
+        "summary": "Count trips under max distance",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": { "from": "A", "to": "C", "maxDistance": 20 }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Count returned", "content": { "application/json": { "example": { "count": 7 } } } },
+          "422": { "description": "Validation errors", "content": { "application/json": { "example": { "error": "maxDistance must be > 0" } } } }
+        }
+      }
+    },
+    "/routes/shortest": {
+      "get": {
+        "summary": "Find shortest path between two towns",
+        "parameters": [
+          { "name": "from", "in": "query", "required": true, "schema": { "type": "string" } },
+          { "name": "to", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Shortest path returned", "content": { "application/json": { "example": { "distance": 9, "path": ["A", "B", "C"] } } } },
+          "404": { "description": "No such route", "content": { "application/json": { "example": { "error": "NO SUCH ROUTE" } } } },
+          "422": { "description": "Validation errors", "content": { "application/json": { "example": { "error": "invalid from: empty town name" } } } }
+        }
+      }
+    }
+  }
+}

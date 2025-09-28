@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -35,53 +37,85 @@ func (g *Graph) LoadGraphFromFile(graphPath string) error {
 	}
 	defer file.Close()
 	scan := bufio.NewScanner(file)
-
+	var allEdges []string
 	for scan.Scan() {
 		text := scan.Text()
-		paths := strings.Split(text, ",")
-		err = g.LoadEdges(paths)
-		if err != nil {
-			return fmt.Errorf("error opening graph file: %v", err)
+		text = strings.TrimSpace(text)
+		if text == "" {
+			continue
 		}
+		paths := strings.Split(text, ",")
+		for _, path := range paths {
+			allEdges = append(allEdges, strings.TrimSpace(path))
+		}
+	}
+
+	err = g.LoadEdges(allEdges)
+	if err != nil {
+		return fmt.Errorf("error opening graph file: %v", err)
 	}
 	return nil
 }
 
+var tokenRegex = regexp.MustCompile(`^([A-Z]{1,16})([A-Z]{1,16})(\d+)$`)
+
 // LoadEdges replaces the graph data
 func (g *Graph) LoadEdges(edges []string) error {
-	g.mutex.Lock()
-	defer g.mutex.Unlock()
 
 	newNodes := make(map[string][]Edge)
 	for _, e := range edges {
 		e = strings.ToUpper(strings.TrimSpace(e))
-		if len(e) < 3 {
-			return errors.New("invalid edge format")
+		m := tokenRegex.FindStringSubmatch(e)
+		if m == nil {
+			return fmt.Errorf("invalid edge token: %q", e)
 		}
-		from, to := string(e[0]), string(e[1])
-		dist := int(e[2] - '0') // simple parse; extend for multi-digit
+		from := m[1]
+		to := m[2]
+		if from == to {
+			return fmt.Errorf("self-loop not allowed: %s->%s", from, to)
+		}
+		dist, err := strconv.Atoi(m[3])
+		if err != nil || dist <= 0 {
+			return fmt.Errorf("invalid distance for token %q", e)
+		}
 		// check duplicates
 		for _, edge := range newNodes[from] {
 			if edge.To == to {
-				return errors.New("duplicate edge: " + e)
+				return fmt.Errorf("duplicate edge: %s%s%d", from, to, dist)
 			}
 		}
 		newNodes[from] = append(newNodes[from], Edge{To: to, Distance: dist})
 	}
 
+	g.mutex.Lock()
+	defer g.mutex.Unlock()
 	g.Nodes = newNodes
 	return nil
 }
 
-// Distance calculates distance for a fixed path
-func (g *Graph) Distance(path []string) (int, error) {
+// snapshotNodes returns a shallow copy reference to the nodes map so
+// traversal can proceed without holding lock for the entire operation.
+func (g *Graph) snapshotNodes() map[string][]Edge {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
+	// shallow copy of map header (slices remain shared but we never modify them)
+	snap := make(map[string][]Edge, len(g.Nodes))
+	for k, v := range g.Nodes {
+		snap[k] = v
+	}
+	return snap
+}
+
+// Distance calculates distance for a fixed path
+func (g *Graph) Distance(path []string) (int, error) {
+	snap := g.snapshotNodes()
 	total := 0
 	for i := 0; i < len(path)-1; i++ {
 		found := false
-		for _, e := range g.Nodes[path[i]] {
-			if e.To == path[i+1] {
+		from := path[i]
+		to := path[i+1]
+		for _, e := range snap[from] {
+			if e.To == to {
 				total += e.Distance
 				found = true
 				break
@@ -96,8 +130,13 @@ func (g *Graph) Distance(path []string) (int, error) {
 
 // CountTripsByStops counts trips with stop constraints
 func (g *Graph) CountTripsByStops(from, to string, minStops, maxStops int) int {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
+	if maxStops < 0 || minStops < 0 {
+		return 0
+	}
+	if minStops > maxStops {
+		return 0
+	}
+	nodes := g.snapshotNodes()
 	count := 0
 	type state struct {
 		Node  string
@@ -113,7 +152,7 @@ func (g *Graph) CountTripsByStops(from, to string, minStops, maxStops int) int {
 		if n.Stops >= minStops && n.Node == to {
 			count++
 		}
-		for _, e := range g.Nodes[n.Node] {
+		for _, e := range nodes[n.Node] {
 			stack = append(stack, state{e.To, n.Stops + 1})
 		}
 	}
@@ -122,8 +161,10 @@ func (g *Graph) CountTripsByStops(from, to string, minStops, maxStops int) int {
 
 // CountTripsByDistance counts trips under distance constraint
 func (g *Graph) CountTripsByDistance(from, to string, maxDistance int) int {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
+	if maxDistance <= 0 {
+		return 0
+	}
+	nodes := g.snapshotNodes()
 	count := 0
 	type state struct {
 		Node     string
@@ -133,7 +174,7 @@ func (g *Graph) CountTripsByDistance(from, to string, maxDistance int) int {
 	for len(stack) > 0 {
 		n := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		for _, e := range g.Nodes[n.Node] {
+		for _, e := range nodes[n.Node] {
 			d := n.Distance + e.Distance
 			if d >= maxDistance {
 				continue
@@ -149,9 +190,10 @@ func (g *Graph) CountTripsByDistance(from, to string, maxDistance int) int {
 
 // ShortestPath returns shortest distance and path using Dijkstra
 func (g *Graph) ShortestPath(from, to string) (int, []string) {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
-
+	if from == "" || to == "" {
+		return -1, nil
+	}
+	nodes := g.snapshotNodes()
 	visited := make(map[string]int)
 	pq := &priorityQueue{}
 	heap.Init(pq)
@@ -176,44 +218,11 @@ func (g *Graph) ShortestPath(from, to string) (int, []string) {
 				shortestPath = curr.path
 			}
 		}
-		for _, e := range g.Nodes[curr.node] {
+		for _, e := range nodes[curr.node] {
 			heap.Push(pq, &pqItem{node: e.To, dist: curr.dist + e.Distance, path: append(append([]string{}, curr.path...), e.To)})
 		}
 	}
 	return shortestDist, shortestPath
-}
-
-func (g *Graph) FindShortestPath(from, to string) (int, []string) {
-	g.mutex.RLock()
-	defer g.mutex.RUnlock()
-	var sp []string
-	pr := &priorityQueue{}
-	heap.Init(pr)
-	heap.Push(pr, &pqItem{node: from, dist: 0, path: []string{from}})
-	v := make(map[string]int)
-	sl := -1
-
-	for pr.Len() > 0 {
-		node := heap.Pop(pr).(*pqItem)
-		if n, ok := v[node.node]; ok && n <= node.dist {
-			continue
-		}
-		if node.node == to && node.dist > 0 {
-			if sl == -1 || sl > node.dist || (sl == node.dist && strings.Join(sp, "") > strings.Join(node.path, "")) {
-				sl = node.dist
-				sp = node.path
-			}
-		}
-		if node.dist > 0 || node.node != from {
-			v[node.node] = node.dist
-		}
-
-		for _, p := range g.Nodes[node.node] {
-			heap.Push(pr, &pqItem{node: p.To, dist: node.dist + p.Distance, path: append(append([]string{}, node.path...), p.To)})
-		}
-	}
-
-	return sl, sp
 }
 
 type pqItem struct {
