@@ -78,7 +78,7 @@ func (g *Graph) LoadEdges(edges []string) error {
 		if err != nil || dist <= 0 {
 			return fmt.Errorf("invalid distance for token %q", e)
 		}
-		// check duplicates
+		
 		for _, edge := range newNodes[from] {
 			if edge.To == to {
 				return fmt.Errorf("duplicate edge: %s%s%d", from, to, dist)
@@ -98,7 +98,7 @@ func (g *Graph) LoadEdges(edges []string) error {
 func (g *Graph) snapshotNodes() map[string][]Edge {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
-	// shallow copy of map header (slices remain shared but we never modify them)
+	
 	snap := make(map[string][]Edge, len(g.Nodes))
 	for k, v := range g.Nodes {
 		snap[k] = v
