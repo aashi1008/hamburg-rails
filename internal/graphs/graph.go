@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/aashi1008/hamburg-rails/internal/models"
 )
 
 type Edge struct {
@@ -78,7 +81,7 @@ func (g *Graph) LoadEdges(edges []string) error {
 		if err != nil || dist <= 0 {
 			return fmt.Errorf("invalid distance for token %q", e)
 		}
-		
+
 		for _, edge := range newNodes[from] {
 			if edge.To == to {
 				return fmt.Errorf("duplicate edge: %s%s%d", from, to, dist)
@@ -98,7 +101,7 @@ func (g *Graph) LoadEdges(edges []string) error {
 func (g *Graph) snapshotNodes() map[string][]Edge {
 	g.mutex.RLock()
 	defer g.mutex.RUnlock()
-	
+
 	snap := make(map[string][]Edge, len(g.Nodes))
 	for k, v := range g.Nodes {
 		snap[k] = v
@@ -244,4 +247,73 @@ func (pq *priorityQueue) Pop() interface{} {
 	item := old[n-1]
 	*pq = old[:n-1]
 	return item
+}
+
+func (g *Graph) SearchRoutes(from, to string, req models.RouteSearchRequest) models.RouteSearchResponse {
+	// DFS to find routes with constraints
+	type state struct {
+		Path     []string
+		Distance int
+	}
+	stack := []state{{Path: []string{from}, Distance: 0}}
+	results := []state{}
+	nodes := g.snapshotNodes()
+	for len(stack) > 0 {
+		curr := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		last := curr.Path[len(curr.Path)-1]
+		if last == to && len(curr.Path) > 1 {
+			results = append(results, curr)
+		}
+
+		for _, e := range nodes[last] {
+			newDist := curr.Distance + e.Distance
+			newPath := append(append([]string{}, curr.Path...), e.To)
+
+			if req.Constraints.MaxStops > 0 && len(newPath)-1 > req.Constraints.MaxStops {
+				continue
+			}
+			if req.Constraints.MaxDistance > 0 && newDist > req.Constraints.MaxDistance {
+				continue
+			}
+			if req.Constraints.DistinctNodes && containsDuplicate(newPath) {
+				continue
+			}
+			stack = append(stack, state{Path: newPath, Distance: newDist})
+		}
+	}
+
+	// Sort by distance then lexicographically
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Distance != results[j].Distance {
+			return results[i].Distance < results[j].Distance
+		}
+		return strings.Join(results[i].Path, "") < strings.Join(results[j].Path, "")
+	})
+
+	limit := req.Limit
+	if limit <= 0 || limit > len(results) {
+		limit = len(results)
+	}
+
+	res := models.RouteSearchResponse{}
+	for _, r := range results[:limit] {
+		res.Routes = append(res.Routes, struct {
+			Path     []string `json:"path"`
+			Distance int      `json:"distance"`
+		}{Path: r.Path, Distance: r.Distance})
+	}
+	return res
+}
+
+func containsDuplicate(path []string) bool {
+	set := make(map[string]struct{})
+	for _, n := range path {
+		if _, exists := set[n]; exists {
+			return true
+		}
+		set[n] = struct{}{}
+	}
+	return false
 }

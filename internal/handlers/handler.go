@@ -197,3 +197,25 @@ func (h *Handler) ShortestPath(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]interface{}{"distance": dist, "path": path})
 }
+
+func (h *Handler) SearchRoutes(w http.ResponseWriter, r *http.Request) {
+	var req models.RouteSearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	from, err := validateTown(req.From)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+	to, err := validateTown(req.To)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
+
+	res := h.Graph.SearchRoutes(from, to, req)
+	writeJSON(w, res)
+}

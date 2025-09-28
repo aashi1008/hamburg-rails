@@ -22,5 +22,6 @@ func SetupRoutes(h *handlers.Handler, logger *slog.Logger) *mux.Router {
 	r.HandleFunc("/routes/count-by-distance", h.CountByDistance).Methods(http.MethodPost)
 	r.HandleFunc("/routes/shortest", h.ShortestPath).Methods(http.MethodGet)
 	r.Handle("/metrics", promhttp.HandlerFor(metrics.CustomRegistry, promhttp.HandlerOpts{}))
+	r.HandleFunc("/routes/search", h.SearchRoutes).Methods(http.MethodPost)
 	return r
 }
