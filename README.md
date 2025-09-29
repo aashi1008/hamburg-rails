@@ -96,7 +96,7 @@ curl -X POST http://localhost:8080/routes/count-by-stops   -H "Content-Type: app
 Response:
 ---
 ```json
-{"count":2}
+{"count":1}
 ```
 ---
 
@@ -109,7 +109,7 @@ curl -X POST http://localhost:8080/routes/count-by-distance   -H "Content-Type: 
 Response:
 ---
 ```json
-{"count":3}
+{"count":1}
 ```
 ---
 
