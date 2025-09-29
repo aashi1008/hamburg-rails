@@ -126,6 +126,89 @@ Response:
 ```
 ---
 
+### 8. Route Finder
+---
+```bash
+curl -X POST http://localhost:8080/routes/search   -H "Content-Type: application/json"   -d '{"from": "A","to": "C","constraints": {"maxStops": 5,"maxDistance": 25,"distinctNodes": false},"limit": 10}'
+```
+---
+Response:
+---
+```json
+{
+    "routes": [
+        {
+            "path": [
+                "A",
+                "B",
+                "C"
+            ],
+            "distance": 9
+        },
+        {
+            "path": [
+                "A",
+                "D",
+                "C"
+            ],
+            "distance": 13
+        },
+        {
+            "path": [
+                "A",
+                "E",
+                "B",
+                "C"
+            ],
+            "distance": 14
+        },
+        {
+            "path": [
+                "A",
+                "B",
+                "C",
+                "E",
+                "B",
+                "C"
+            ],
+            "distance": 18
+        },
+        {
+            "path": [
+                "A",
+                "D",
+                "E",
+                "B",
+                "C"
+            ],
+            "distance": 18
+        },
+        {
+            "path": [
+                "A",
+                "D",
+                "C",
+                "E",
+                "B",
+                "C"
+            ],
+            "distance": 22
+        },
+        {
+            "path": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "C"
+            ],
+            "distance": 25
+        }
+    ]
+}
+```
+---
+
 ## 📑 Architecture Decision Record (ADR)
 
 ### Context
